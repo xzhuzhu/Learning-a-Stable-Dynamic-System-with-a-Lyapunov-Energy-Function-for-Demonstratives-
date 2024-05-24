@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser(description='Euclideanizing flows for learning 
 parser.add_argument(
     '--data-name',
     type=str,
-    default='JShape_2',
+    default='Sshape',
     help='name of the letter in LASA dataset')
 
 args = parser.parse_args()
