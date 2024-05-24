@@ -133,13 +133,16 @@ class CouplingLayer(nn.Module):
 		self.nn1 = nn.Sequential(
 			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_inputs,num_hidden)),
 			nn.Tanh(),
+			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_hidden,num_hidden)),
+			nn.Tanh(),
+
 			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_hidden,num_outputs))
 		)
 		self.nn2 = nn.Sequential(
 			nn.Linear(num_inputs,num_hidden),
 			act_func(),
 			nn.Linear(num_hidden,num_hidden),
-		    act_func(),
+		        act_func(),
 			nn.Linear(num_hidden,num_outputs),
 			nn.Softplus()
 		)
