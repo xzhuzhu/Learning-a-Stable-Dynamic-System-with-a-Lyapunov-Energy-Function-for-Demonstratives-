@@ -31,7 +31,7 @@ class NaturalGradientDescentVelNet(nn.Module):
 		self.scale_vel = scale_vel
 
 		# scaling network (only used when scale_vel param is True!)
-		self.log_vel_scalar = FCNN(n_dim_x, 1, 100, act='leaky_relu')					 # a 2-hidden layer network
+		self.log_vel_scalar = CouplingLayer(n_dim_x, 1, 100, act='leaky_relu')					 # a 2-hidden layer network
 		self.vel_scalar = lambda x: torch.exp(self.log_vel_scalar(x)) + self.eps 		 # always positive scalar!
 
 		if origin is None:
@@ -54,12 +54,9 @@ class NaturalGradientDescentVelNet(nn.Module):
 		y_hat = y_hat - origin_  			# Shifting the origin
 		yd_hat = -self.grad_potential_fcn(y_hat)  		# negative gradient of potential
 
-		if self.is_diffeomorphism:
-			J_hat_inv = torch.inverse(J_hat)
-		else:
-			I = self.I.repeat(J_hat.shape[0], 1, 1)
-			J_hat_T = J_hat.permute(0, 2, 1)
-			J_hat_inv = torch.matmul(torch.inverse(torch.matmul(J_hat_T, J_hat) + 1e-12 * I), J_hat_T)
+
+		J_hat_inv = torch.linalg.pinv(J_hat)
+
 
 		xd_hat = torch.bmm(J_hat_inv, yd_hat.unsqueeze(2)).squeeze() 	# natural gradient descent
 
@@ -78,21 +75,16 @@ class BijectionNet(nn.Sequential):
 	"""
 	A sequential container of flows based on coupling layers.
 	"""
-	def __init__(self, num_dims, num_blocks, num_hidden, s_act=None, t_act=None, sigma=None,
-				 coupling_network_type='fcnn'):
+	def __init__(self, num_dims, num_blocks, num_hidden, act=None):
 		self.num_dims = num_dims
 		modules = []
-		print('Using the {} for coupling layer'.format(coupling_network_type))
-		mask = torch.arange(0, num_dims) % 2  # alternating inputs
-		mask = mask.float()
 		# mask = mask.to(device).float()
 		for _ in range(num_blocks):
 			modules += [
 				CouplingLayer(
-					num_inputs=num_dims, num_hidden=num_hidden, mask=mask,
-					s_act=s_act, t_act=t_act, sigma=sigma, base_network=coupling_network_type),
+					num_inputs=num_dims, num_outputs=num_dims,num_hidden=num_hidden,
+					act=act),
 			]
-			mask = 1 - mask  # flipping mask
 		super(BijectionNet, self).__init__(*modules)
 
 	def jacobian(self, inputs, mode='direct'):
@@ -142,119 +134,35 @@ class CouplingLayer(nn.Module):
 	from RealNVP (https://arxiv.org/abs/1605.08803).
 	"""
 
-	def __init__(self, num_inputs, num_hidden, mask,
-				 base_network='rffn', s_act='elu', t_act='elu', sigma=0.45):
+	def __init__(self, num_inputs, num_outputs,num_hidden, act='elu'):
 		super(CouplingLayer, self).__init__()
+		activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh, 'leaky_relu': nn.LeakyReLU,
+					   'elu': nn.ELU, 'prelu': nn.PReLU, 'softplus': nn.Softplus}
 
+		act_func = activations[act]
 		# self.num_inputs = num_inputs
 		# self.mask = mask
 		self.nn = nn.Sequential(
 			nn.Linear(num_inputs,num_hidden),
-			nn.Tanh(),
+			act_func(),
 			nn.Linear(num_hidden,num_hidden),
-			nn.Tanh(),
-			nn.Linear(num_hidden,num_inputs)
+			act_func(),
+			nn.Linear(num_hidden,num_outputs)
 		)
 
 
 
 	def forward(self, inputs, mode='direct'): #0.0023
 		return self.nn(inputs)+inputs
-		# mask = self.mask
-		# masked_inputs = inputs * mask
-		# # masked_inputs.requires_grad_(True)
-		#
-		# log_s = self.scale_net(masked_inputs) * (1 - mask)
-		# t = self.translate_net(masked_inputs) * (1 - mask)
-		#
-		# if mode == 'direct':
-		# 	s = torch.exp(log_s)
-		# 	return inputs * s + t
-		# else:
-		# 	s = torch.exp(-log_s)
-		# 	return (inputs - t) * s
 
 	def jacobian(self, inputs):
 		return get_jacobian(self, inputs, inputs.size(-1))
 
 
-class RFFN(nn.Module):
-	"""
-	Random Fourier features network.
-	"""
-
-	def __init__(self, in_dim, out_dim, nfeat, sigma=10.):
-		super(RFFN, self).__init__()
-		self.sigma = np.ones(in_dim) * sigma
-		self.coeff = np.random.normal(0.0, 1.0, (nfeat, in_dim))
-		self.coeff = self.coeff / self.sigma.reshape(1, len(self.sigma))
-		self.offset = 2.0 * np.pi * np.random.rand(1, nfeat)
-
-		self.network = nn.Sequential(
-			LinearClamped(in_dim, nfeat, self.coeff, self.offset),
-			Cos(),
-			nn.Linear(nfeat, out_dim, bias=False)
-		)
-
-	def forward(self, x):
-		return self.network(x)
 
 
-class FCNN(nn.Module):
-	'''
-	2-layer fully connected neural network
-	'''
-
-	def __init__(self, in_dim, out_dim, hidden_dim, act='tanh'):
-		super(FCNN, self).__init__()
-		activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh, 'leaky_relu': nn.LeakyReLU,
-					   'elu': nn.ELU, 'prelu': nn.PReLU, 'softplus': nn.Softplus}
-
-		act_func = activations[act]
-		self.network = nn.Sequential(
-			nn.Linear(in_dim, hidden_dim), act_func(),
-			nn.Linear(hidden_dim, hidden_dim), act_func(),
-			nn.Linear(hidden_dim, out_dim)
-		)
-
-	def forward(self, x):
-		return self.network(x)
 
 
-class LinearClamped(nn.Module):
-	'''
-	Linear layer with user-specified parameters (not to be learrned!)
-	'''
-
-	__constants__ = ['bias', 'in_features', 'out_features']
-
-	def __init__(self, in_features, out_features, weights, bias_values, bias=True):
-		super(LinearClamped, self).__init__()
-		self.in_features = in_features
-		self.out_features = out_features
-
-		self.register_buffer('weight', torch.Tensor(weights))
-		if bias:
-			self.register_buffer('bias', torch.Tensor(bias_values))
-
-	def forward(self, input):
-		if input.dim() == 1:
-			return F.linear(input.view(1, -1), self.weight, self.bias)
-		return F.linear(input, self.weight, self.bias)
-
-	def extra_repr(self):
-		return 'in_features={}, out_features={}, bias={}'.format(
-			self.in_features, self.out_features, self.bias is not None
-		)
-
-
-class Cos(nn.Module):
-	"""
-	Applies the cosine element-wise function
-	"""
-
-	def forward(self, inputs):
-		return torch.cos(inputs)
 
 
 def get_jacobian(net, x, output_dims, reshape_flag=True):
