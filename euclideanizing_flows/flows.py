@@ -16,7 +16,7 @@ class NaturalGradientDescentVelNet(nn.Module):
 	is_diffeomorphism (optional): if set to True, use the inverse of the jacobian itself rather than pseudo-inverse
 	"""
 	def __init__(self, taskmap_fcn, grad_potential_fcn, n_dim_x, n_dim_y,
-				 scale_vel=True, is_diffeomorphism=True,
+				 scale_vel=True,
 				 origin=None, eps=1e-12, device='cpu'):
 
 		super(NaturalGradientDescentVelNet, self).__init__()
@@ -27,7 +27,6 @@ class NaturalGradientDescentVelNet(nn.Module):
 		self.eps = eps
 		self.device = device
 		self.I = torch.eye(self.n_dim_x, self.n_dim_x, device=device).unsqueeze(0)
-		self.is_diffeomorphism = is_diffeomorphism
 		self.scale_vel = scale_vel
 
 		# scaling network (only used when scale_vel param is True!)
@@ -39,8 +38,7 @@ class NaturalGradientDescentVelNet(nn.Module):
 		else:
 			self.origin = origin.to(device)
 
-		if self.is_diffeomorphism:
-			assert (n_dim_x == n_dim_y), 'Input and Output dims need to be same for diffeomorphism!'
+
 
 	def forward(self, x):
 		if x.ndimension() == 1:
@@ -75,7 +73,9 @@ class BijectionNet(nn.Sequential):
 	"""
 	A sequential container of flows based on coupling layers.
 	"""
-	def __init__(self, num_dims, num_blocks, num_hidden, act=None):
+	def __init__(self, num_dims, num_blocks, num_hidden, act=None,is_diffeomorphism=False):
+		self.is_diffeomorphism = is_diffeomorphism
+
 		self.num_dims = num_dims
 		modules = []
 		# mask = mask.to(device).float()
@@ -87,45 +87,34 @@ class BijectionNet(nn.Sequential):
 			]
 		super(BijectionNet, self).__init__(*modules)
 
-	def jacobian(self, inputs, mode='direct'):
+	def jacobian(self, inputs):
 		'''
 		Finds the product of all jacobians
 		'''
 		batch_size = inputs.size(0)
 		J = torch.eye(self.num_dims, device=inputs.device).unsqueeze(0).repeat(batch_size, 1, 1)
 
-		if mode == 'direct':
-			for module in self._modules.values():
-				J_module = module.jacobian(inputs)
-				J = torch.matmul(J_module, J)
+		for module in self._modules.values():
+			J_module = module.jacobian(inputs)
+			J = torch.matmul(J_module, J)
 				# inputs = module(inputs, mode)
-		else:
-			for module in reversed(self._modules.values()):
-				J_module = module.jacobian(inputs)
-				J = torch.matmul(J_module, J)
-				# inputs = module(inputs, mode)
+
 		return J
 
-	def forward(self, inputs, mode='direct'):
+	def forward(self, inputs):
 		""" Performs a forward or backward pass for flow modules.
 		Args:
 			inputs: a tuple of inputs and logdets
 			mode: to run direct computation or inverse
 		"""
-		assert mode in ['direct', 'inverse']
 		batch_size = inputs.size(0)
 		J = torch.eye(self.num_dims, device=inputs.device).unsqueeze(0).repeat(batch_size, 1, 1)
 
-		if mode == 'direct':
-			for module in self._modules.values():
-				J_module = module.jacobian(inputs)
-				J = torch.matmul(J_module, J)
-				inputs = module(inputs, mode)
-		else:
-			for module in reversed(self._modules.values()):
-				J_module = module.jacobian(inputs)
-				J = torch.matmul(J_module, J)
-				inputs = module(inputs, mode)
+		for module in self._modules.values():
+			J_module = module.jacobian(inputs)
+			J = torch.matmul(J_module, J)
+			inputs = module(inputs,is_diffeomorphism=self.is_diffeomorphism)
+
 		return inputs, J
 
 
@@ -140,20 +129,39 @@ class CouplingLayer(nn.Module):
 					   'elu': nn.ELU, 'prelu': nn.PReLU, 'softplus': nn.Softplus}
 
 		act_func = activations[act]
-		# self.num_inputs = num_inputs
-		# self.mask = mask
-		self.nn = nn.Sequential(
+
+		self.nn1 = nn.Sequential(
+			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_inputs,num_hidden)),
+			nn.Tanh(),
+			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_hidden,num_outputs))
+		)
+		self.nn2 = nn.Sequential(
 			nn.Linear(num_inputs,num_hidden),
 			act_func(),
 			nn.Linear(num_hidden,num_hidden),
+		    act_func(),
+			nn.Linear(num_hidden,num_outputs),
+			nn.Softplus()
+		)
+
+		self.nn3 = nn.Sequential(
+			nn.Linear(num_inputs, num_hidden),
 			act_func(),
-			nn.Linear(num_hidden,num_outputs)
+			nn.Linear(num_hidden, num_hidden),
+			act_func(),
+			nn.Linear(num_hidden, num_outputs),
+
 		)
 
 
 
-	def forward(self, inputs, mode='direct'): #0.0023
-		return self.nn(inputs)+inputs
+	def forward(self, inputs, is_diffeomorphism=False): #0.0023
+		if is_diffeomorphism:
+			y1 = self.nn1(inputs)+inputs
+			y = self.nn2(y1)*y1+y1
+		else:
+			y = self.nn3(inputs)+inputs
+		return y
 
 	def jacobian(self, inputs):
 		return get_jacobian(self, inputs, inputs.size(-1))
