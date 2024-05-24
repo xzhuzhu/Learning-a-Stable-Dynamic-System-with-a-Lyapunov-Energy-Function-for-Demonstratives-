@@ -1,9 +1,4 @@
-'''
-Main script for training stable dynamics using Euclideanizing flows on LASA handwriting dataset
 
-Ref: M. Asif Rana et al, Euclideanizing Flows: Diffeomorphic Reduction for Learning Stable Dynamical Systems, L4DC 2020
-(https://arxiv.org/pdf/2005.13143.pdf)
-'''
 
 from __future__ import print_function
 import torch.optim as optim
@@ -19,7 +14,7 @@ parser = argparse.ArgumentParser(description='Euclideanizing flows for learning 
 parser.add_argument(
     '--data-name',
     type=str,
-    default='Multi_Models_1',
+    default='Zshape',
     help='name of the letter in LASA dataset')
 
 args = parser.parse_args()
@@ -29,45 +24,22 @@ args = parser.parse_args()
 data_name = args.data_name
 test_learner_model = True               # to plot the rollouts and vector fields
 load_learner_model = False              # to load a saved model
-coupling_network_type = 'rffn'          # rffn/fcnn (specify random fourier features or neural network for coupling layer)
 plot_resolution = 0.01                  # plotting resolution (only use for testing)
 
 # -----------------------------------------------------------------------
 # learner params (for normalizing flows)
-if coupling_network_type == 'fcnn':         # neural network parameterization
-    num_blocks = 2                          # number of coupling layers
-    num_hidden = 200                        # hidden layer dimensions (there are two of hidden layers)
-    # only for fcnn!
-    t_act = 'elu'                           # activation fcn in each network (must be continuously differentiable!)
-    s_act = 'elu'
 
-    minibatch_mode = True                   # True uses the batch_size arg below
-    batch_size = 64                         # size of minibatch
-    learning_rate = 0.005
-    sigma = None                            # not required for fcnn
-    print('WARNING: FCNN params are not tuned!! ')
-
-elif coupling_network_type == 'rffn':       # random fourier features parameterization
-    num_blocks = 2                         # number of coupling layers
-    num_hidden = 200                        # number of random fourier features per block
-    sigma = 0.45                            # length scale for random fourier features
-
-    minibatch_mode = False
-    batch_size = 64
-    s_act = None                            # not required for rffn
-    t_act = None                            # not required for rffn
-    learning_rate = 0.003                  # low learning rate helps!
-
-else:
-    raise TypeError('Coupling layer network not defined!')
 
 # ------------------------------------------------------------------
 # Training params
-
+num_blocks = 2  # number of coupling layers
+num_hidden = 200  # hidden layer dimensions (there are two of hidden layers)
+t_act = 'elu'
 eps = 1e-12
 no_cuda = True          # TODO: cuda compatibility not tested fully!
 seed = None
 weight_regularizer = 1e-10
+learning_rate = 0.001
 epochs = 500
 loss_clip = 1e3
 clip_gradient = True
@@ -109,7 +81,7 @@ n_dims = dataset.n_dims
 n_pts = dataset.n_pts
 
 dt = dataset.dt
-
+minibatch_mode = False
 dataset_list = []
 time_list = []
 expert_traj_list = []
@@ -152,9 +124,7 @@ x_lim = [[xmin - 0.1, xmax + 0.1], [ymin - 0.1, ymax + 0.1]]
 # Learner setup
 
 # bijection network
-taskmap_net = BijectionNet(num_dims=n_dims, num_blocks=num_blocks, num_hidden=num_hidden, s_act=s_act, t_act=t_act,
-                           sigma=sigma,
-                           coupling_network_type=coupling_network_type)
+taskmap_net = BijectionNet(num_dims=n_dims, num_blocks=num_blocks, num_hidden=num_hidden, act=t_act)
 
 
 y_pot_grad_fcn = lambda y: F.normalize(y)   # potential fcn gradient (can use quadratic potential instead)
