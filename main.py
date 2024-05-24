@@ -1,5 +1,3 @@
-
-
 from __future__ import print_function
 import torch.optim as optim
 from torch.utils.data import TensorDataset
@@ -14,7 +12,7 @@ parser = argparse.ArgumentParser(description='Euclideanizing flows for learning 
 parser.add_argument(
     '--data-name',
     type=str,
-    default='Zshape',
+    default='JShape_2',
     help='name of the letter in LASA dataset')
 
 args = parser.parse_args()
@@ -34,7 +32,7 @@ plot_resolution = 0.01                  # plotting resolution (only use for test
 # Training params
 num_blocks = 2  # number of coupling layers
 num_hidden = 200  # hidden layer dimensions (there are two of hidden layers)
-t_act = 'elu'
+t_act = 'tanh'
 eps = 1e-12
 no_cuda = True          # TODO: cuda compatibility not tested fully!
 seed = None
@@ -124,7 +122,7 @@ x_lim = [[xmin - 0.1, xmax + 0.1], [ymin - 0.1, ymax + 0.1]]
 # Learner setup
 
 # bijection network
-taskmap_net = BijectionNet(num_dims=n_dims, num_blocks=num_blocks, num_hidden=num_hidden, act=t_act)
+taskmap_net = BijectionNet(num_dims=n_dims, num_blocks=num_blocks, num_hidden=num_hidden, act=t_act,is_diffeomorphism=True)
 
 
 y_pot_grad_fcn = lambda y: F.normalize(y)   # potential fcn gradient (can use quadratic potential instead)
@@ -134,7 +132,6 @@ euclideanization_net = NaturalGradientDescentVelNet(taskmap_fcn=taskmap_net,
                                                     grad_potential_fcn=y_pot_grad_fcn,
                                                     origin=torch.from_numpy(goal).float(),
                                                     scale_vel=True,
-                                                    is_diffeomorphism=True,
                                                     n_dim_x=n_dims,
                                                     n_dim_y=n_dims,
                                                     eps=eps,
