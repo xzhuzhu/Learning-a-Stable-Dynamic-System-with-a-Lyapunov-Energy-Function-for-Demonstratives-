@@ -31,7 +31,7 @@ plot_resolution = 0.01                  # plotting resolution (only use for test
 # ------------------------------------------------------------------
 # Training params
 num_blocks = 2  # number of coupling layers
-num_hidden = 200  # hidden layer dimensions (there are two of hidden layers)
+num_hidden = 300  # hidden layer dimensions (there are two of hidden layers)
 t_act = 'tanh'
 eps = 1e-12
 no_cuda = True          # TODO: cuda compatibility not tested fully!
