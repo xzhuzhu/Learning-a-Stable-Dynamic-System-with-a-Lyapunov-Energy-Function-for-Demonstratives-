@@ -115,7 +115,7 @@ xmax = np.max(x_train[:, 0])
 ymin = np.min(x_train[:, 1])
 ymax = np.max(x_train[:, 1])
 
-x_lim = [[xmin - 0.1, xmax + 0.1], [ymin - 0.1, ymax + 0.1]]
+x_lim = [[xmin - 0.3, xmax + 0.3], [ymin - 0.3, ymax + 0.3]]
 
 
 # --------------------------------------------------------------------------------
