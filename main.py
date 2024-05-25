@@ -1,3 +1,10 @@
+'''
+Main script for training stable dynamics using Euclideanizing flows on LASA handwriting dataset
+
+Ref: M. Asif Rana et al, Euclideanizing Flows: Diffeomorphic Reduction for Learning Stable Dynamical Systems, L4DC 2020
+(https://arxiv.org/pdf/2005.13143.pdf)
+'''
+
 from __future__ import print_function
 import torch.optim as optim
 from torch.utils.data import TensorDataset
@@ -30,8 +37,8 @@ plot_resolution = 0.01                  # plotting resolution (only use for test
 
 # ------------------------------------------------------------------
 # Training params
-num_blocks = 2  # number of coupling layers
-num_hidden = 300  # hidden layer dimensions (there are two of hidden layers)
+num_blocks = 1  # number of coupling layers
+num_hidden = 500  # hidden layer dimensions (there are two of hidden layers)
 t_act = 'tanh'
 eps = 1e-12
 no_cuda = True          # TODO: cuda compatibility not tested fully!
@@ -141,7 +148,7 @@ learner_model = euclideanization_net
 if not load_learner_model:
     print('Training model ...')
     # Training learner
-    optimizer = optim.Adam(learner_model.parameters(), lr=learning_rate, weight_decay=weight_regularizer)
+    optimizer = optim.AdamW(learner_model.parameters(), lr=learning_rate, weight_decay=weight_regularizer)
     criterion = nn.SmoothL1Loss()
     loss_fn = criterion
 
