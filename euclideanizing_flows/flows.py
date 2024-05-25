@@ -29,9 +29,9 @@ class NaturalGradientDescentVelNet(nn.Module):
 		self.I = torch.eye(self.n_dim_x, self.n_dim_x, device=device).unsqueeze(0)
 		self.scale_vel = scale_vel
 		self.vv=nn.Sequential(nn.Linear(2,300),
-							  nn.SiLU(),
+							  nn.PReLU(),
 							  nn.Linear(300,300),
-							  nn.SiLU(),
+							  nn.PReLU(),
 							  nn.Linear(300,2))
 
 		# scaling network (only used when scale_vel param is True!)
