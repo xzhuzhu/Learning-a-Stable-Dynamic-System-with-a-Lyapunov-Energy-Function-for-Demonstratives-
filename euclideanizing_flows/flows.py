@@ -28,6 +28,11 @@ class NaturalGradientDescentVelNet(nn.Module):
 		self.device = device
 		self.I = torch.eye(self.n_dim_x, self.n_dim_x, device=device).unsqueeze(0)
 		self.scale_vel = scale_vel
+		self.vv=nn.Sequential(nn.Linear(2,300),
+							  nn.SiLU(),
+							  nn.Linear(300,300),
+							  nn.SiLU(),
+							  nn.Linear(300,2))
 
 		# scaling network (only used when scale_vel param is True!)
 		self.log_vel_scalar = CouplingLayer(n_dim_x, 1, 100, act='leaky_relu')					 # a 2-hidden layer network
@@ -50,13 +55,19 @@ class NaturalGradientDescentVelNet(nn.Module):
 		origin_, _ = self.taskmap_fcn(self.origin)
 		y_hat, J_hat = self.taskmap_fcn(x)
 		y_hat = y_hat - origin_  			# Shifting the origin
-		yd_hat = -self.grad_potential_fcn(y_hat)  		# negative gradient of potential
+		doty_pre=self.vv(y_hat)
+		yy=y_hat
+
+		ls_var = torch.sum(doty_pre * yy, -1, keepdim=True)
+		V_y = torch.sum(yy * yy, -1, keepdim=True)
+		yd_hat = doty_pre - F.relu(ls_var + 1e-4 * V_y) * yy / (V_y + 1e-12)
+		#	yd_hat = -self.grad_potential_fcn(y_hat)  		# negative gradient of potential
 
 
 		J_hat_inv = torch.linalg.pinv(J_hat)
 
 
-		xd_hat = torch.bmm(J_hat_inv, yd_hat.unsqueeze(2)).squeeze() 	# natural gradient descent
+		xd_hat = torch.bmm(J_hat_inv, F.normalize(yd_hat).unsqueeze(2)).squeeze() 	# natural gradient descent
 
 		if self.scale_vel:
 			xd = self.vel_scalar(x) * xd_hat  							# mutiplying with a learned velocity scalar
@@ -126,32 +137,36 @@ class CouplingLayer(nn.Module):
 	def __init__(self, num_inputs, num_outputs,num_hidden, act='elu'):
 		super(CouplingLayer, self).__init__()
 		activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh, 'leaky_relu': nn.LeakyReLU,
-					   'elu': nn.ELU, 'prelu': nn.PReLU, 'softplus': nn.Softplus}
+					   'elu': nn.ELU, 'prelu': nn.PReLU, 'softplus': nn.Softplus,'silu':nn.SiLU}
 
 		act_func = activations[act]
 
 		self.nn1 = nn.Sequential(
 			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_inputs,num_hidden)),
 			nn.Tanh(),
-			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_hidden,num_hidden)),
+			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_hidden, num_hidden)),
 			nn.Tanh(),
 
-			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_hidden,num_outputs))
+			torch.nn.utils.parametrizations.spectral_norm(nn.Linear(num_hidden,num_outputs)),
+
 		)
-		self.nn2 = nn.Sequential(
+		self.nn2_1 = nn.Sequential(
 			nn.Linear(num_inputs,num_hidden),
 			act_func(),
 			nn.Linear(num_hidden,num_hidden),
-		        act_func(),
+		    act_func(),
 			nn.Linear(num_hidden,num_outputs),
 			nn.Softplus()
 		)
+
+
 
 		self.nn3 = nn.Sequential(
 			nn.Linear(num_inputs, num_hidden),
 			act_func(),
 			nn.Linear(num_hidden, num_hidden),
 			act_func(),
+
 			nn.Linear(num_hidden, num_outputs),
 
 		)
@@ -161,7 +176,7 @@ class CouplingLayer(nn.Module):
 	def forward(self, inputs, is_diffeomorphism=False): #0.0023
 		if is_diffeomorphism:
 			y1 = self.nn1(inputs)+inputs
-			y = self.nn2(y1)*y1+y1
+			y= self.nn2_1(y1)*y1+y1
 		else:
 			y = self.nn3(inputs)+inputs
 		return y
