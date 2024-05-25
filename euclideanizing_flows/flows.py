@@ -28,11 +28,11 @@ class NaturalGradientDescentVelNet(nn.Module):
 		self.device = device
 		self.I = torch.eye(self.n_dim_x, self.n_dim_x, device=device).unsqueeze(0)
 		self.scale_vel = scale_vel
-		self.vv=nn.Sequential(nn.Linear(2,300),
+		self.vv=nn.Sequential(nn.Linear(2,500),
 							  nn.PReLU(),
-							  nn.Linear(300,300),
+							  nn.Linear(500,500),
 							  nn.PReLU(),
-							  nn.Linear(300,2))
+							  nn.Linear(500,2))
 
 		# scaling network (only used when scale_vel param is True!)
 		self.log_vel_scalar = CouplingLayer(n_dim_x, 1, 100, act='leaky_relu')					 # a 2-hidden layer network
